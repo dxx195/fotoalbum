@@ -34,15 +34,31 @@
   .leeg { color:var(--zacht); text-align:center; padding:60px 0; }
   #groot { position:fixed; inset:0; background:rgba(0,0,0,.88); display:none; align-items:center; justify-content:center; padding:16px; cursor:zoom-out; z-index:10; }
   #groot.open { display:flex; }
+  #slot { max-width:360px; margin:12vh auto 0; background:var(--kaart); border:1px solid var(--rand); border-radius:14px; padding:24px 20px; text-align:center; }
+  #slot h2 { margin:0 0 6px; font-size:22px; }
+  #slot p { margin:0 0 16px; color:var(--zacht); font-size:15px; }
+  #slot .rij { flex-wrap:nowrap; }
   #groot img { max-width:100%; max-height:100%; border-radius:8px; }
 </style>
 </head>
 <body>
-<header>
+<header id="kop" hidden>
   <h1>Fotoalbum</h1>
-  <button class="licht" id="knopToevoegen">Foto's toevoegen</button>
+  <div class="rij">
+    <button class="licht" id="knopToevoegen">Foto's toevoegen</button>
+    <button class="licht" id="knopAfmelden">Afmelden</button>
+  </div>
 </header>
-<main>
+<section id="slot" hidden>
+  <h2>Fotoalbum</h2>
+  <p>Vul de kijkcode in om de foto's te zien</p>
+  <div class="rij">
+    <input type="password" id="kijkcode" placeholder="Kijkcode" autocomplete="off">
+    <button id="knopKijk">Open</button>
+  </div>
+  <div class="melding" id="meldingKijk"></div>
+</section>
+<main id="album" hidden>
   <section class="paneel" id="paneelCode">
     <div class="rij">
       <input type="password" id="code" placeholder="Code" autocomplete="off">
@@ -78,8 +94,17 @@ function zetBeheer(aan) {
   $("knopToevoegen").hidden = aan;
 }
 
+function toonSlot(aan) {
+  $("slot").hidden = !aan;
+  $("album").hidden = aan;
+  $("kop").hidden = aan;
+  if (aan) $("kijkcode").focus();
+}
+
 async function laad() {
-  const r = await fetch("/api/lijst");
+  const r = await fetch("/api/lijst", { headers: code ? { "x-code": code } : {} });
+  if (r.status === 401) { toonSlot(true); return; }
+  toonSlot(false);
   const lijst = r.ok ? await r.json() : [];
   const grid = $("grid");
   grid.innerHTML = "";
@@ -105,6 +130,26 @@ async function laad() {
   }
 }
 
+$("knopKijk").onclick = async () => {
+  const c = $("kijkcode").value.trim();
+  const m = $("meldingKijk");
+  m.className = "melding";
+  m.textContent = "Even checken...";
+  const r = await fetch("/api/kijk", { method: "POST", headers: { "x-kijk": c } });
+  if (r.ok) { $("kijkcode").value = ""; m.textContent = ""; laad(); }
+  else { m.className = "melding fout"; m.textContent = "Verkeerde code"; }
+};
+$("kijkcode").onkeydown = (e) => { if (e.key === "Enter") $("knopKijk").click(); };
+
+$("knopAfmelden").onclick = async () => {
+  await fetch("/api/uit", { method: "POST" });
+  code = "";
+  try { sessionStorage.removeItem("code"); } catch (e) {}
+  zetBeheer(false);
+  $("grid").innerHTML = "";
+  toonSlot(true);
+};
+
 $("groot").onclick = () => $("groot").classList.remove("open");
 
 $("knopToevoegen").onclick = () => {
@@ -114,6 +159,7 @@ $("knopToevoegen").onclick = () => {
 
 async function checkCode(c) {
   const r = await fetch("/api/check", { method: "POST", headers: { "x-code": c } });
+  if (r.ok) await fetch("/api/kijk", { method: "POST", headers: { "x-kijk": c } });
   return r.ok;
 }
 
