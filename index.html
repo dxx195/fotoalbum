@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fotoalbum</title>
+<style>
+  :root { --bg:#f6f5f2; --kaart:#fff; --tekst:#1d1d1f; --zacht:#6b6b70; --rand:#e3e1dc; --accent:#2f6fed; --rood:#d93a3a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141416; --kaart:#1f1f23; --tekst:#f2f2f4; --zacht:#a0a0a8; --rand:#2e2e34; --accent:#6b9bff; --rood:#ff6b6b; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--tekst); }
+  header { max-width:1100px; margin:0 auto; padding:24px 16px 8px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  h1 { margin:0; font-size:28px; }
+  button { font:inherit; border:0; border-radius:10px; padding:10px 16px; cursor:pointer; background:var(--accent); color:#fff; }
+  button.licht { background:var(--kaart); color:var(--tekst); border:1px solid var(--rand); }
+  button:disabled { opacity:.5; cursor:default; }
+  main { max-width:1100px; margin:0 auto; padding:8px 16px 48px; }
+  .paneel { background:var(--kaart); border:1px solid var(--rand); border-radius:14px; padding:16px; margin:12px 0 20px; display:none; }
+  .paneel.open { display:block; }
+  .rij { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  input[type=password], input[type=text] { font:inherit; padding:10px 12px; border-radius:10px; border:1px solid var(--rand); background:var(--bg); color:var(--tekst); min-width:0; flex:1 1 200px; }
+  input[type=file] { flex:1 1 220px; min-width:0; }
+  .melding { color:var(--zacht); font-size:14px; margin-top:8px; min-height:1em; }
+  .melding.fout { color:var(--rood); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
+  figure { margin:0; background:var(--kaart); border:1px solid var(--rand); border-radius:12px; overflow:hidden; position:relative; }
+  figure img { width:100%; aspect-ratio:1; object-fit:cover; display:block; cursor:zoom-in; background:var(--rand); }
+  figcaption { padding:8px 10px; font-size:14px; color:var(--zacht); overflow-wrap:anywhere; }
+  figcaption:empty { display:none; }
+  .weg { position:absolute; top:8px; right:8px; background:var(--rood); padding:6px 10px; font-size:13px; display:none; }
+  body.beheer .weg { display:block; }
+  .leeg { color:var(--zacht); text-align:center; padding:60px 0; }
+  #groot { position:fixed; inset:0; background:rgba(0,0,0,.88); display:none; align-items:center; justify-content:center; padding:16px; cursor:zoom-out; z-index:10; }
+  #groot.open { display:flex; }
+  #groot img { max-width:100%; max-height:100%; border-radius:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Fotoalbum</h1>
+  <button class="licht" id="knopToevoegen">Foto's toevoegen</button>
+</header>
+<main>
+  <section class="paneel" id="paneelCode">
+    <div class="rij">
+      <input type="password" id="code" placeholder="Code" autocomplete="off">
+      <button id="knopCode">Ontgrendel</button>
+    </div>
+    <div class="melding" id="meldingCode"></div>
+  </section>
+
+  <section class="paneel" id="paneelUpload">
+    <div class="rij">
+      <input type="file" id="bestanden" accept="image/*" multiple>
+      <input type="text" id="titel" placeholder="Titel (mag leeg)" maxlength="100">
+      <button id="knopUpload">Uploaden</button>
+      <button class="licht" id="knopUit">Vergrendel</button>
+    </div>
+    <div class="melding" id="meldingUpload"></div>
+  </section>
+
+  <div class="grid" id="grid"></div>
+  <div class="leeg" id="leeg" hidden>Nog geen foto's</div>
+</main>
+<div id="groot"><img alt=""></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let code = "";
+try { code = sessionStorage.getItem("code") || ""; } catch (e) {}
+
+function zetBeheer(aan) {
+  document.body.classList.toggle("beheer", aan);
+  $("paneelUpload").classList.toggle("open", aan);
+  $("paneelCode").classList.remove("open");
+  $("knopToevoegen").hidden = aan;
+}
+
+async function laad() {
+  const r = await fetch("/api/lijst");
+  const lijst = r.ok ? await r.json() : [];
+  const grid = $("grid");
+  grid.innerHTML = "";
+  $("leeg").hidden = lijst.length > 0;
+  for (const f of lijst) {
+    const fig = document.createElement("figure");
+    const img = document.createElement("img");
+    img.src = "/api/foto/" + encodeURIComponent(f.id);
+    img.alt = f.titel || "Foto";
+    img.loading = "lazy";
+    img.onclick = () => { $("groot").querySelector("img").src = img.src; $("groot").classList.add("open"); };
+    const cap = document.createElement("figcaption");
+    cap.textContent = f.titel;
+    const weg = document.createElement("button");
+    weg.className = "weg"; weg.textContent = "Verwijder";
+    weg.onclick = async () => {
+      if (!confirm("Deze foto verwijderen?")) return;
+      const r = await fetch("/api/foto/" + encodeURIComponent(f.id), { method: "DELETE", headers: { "x-code": code } });
+      if (r.ok) fig.remove(); else alert("Lukt niet");
+    };
+    fig.append(img, cap, weg);
+    grid.append(fig);
+  }
+}
+
+$("groot").onclick = () => $("groot").classList.remove("open");
+
+$("knopToevoegen").onclick = () => {
+  $("paneelCode").classList.toggle("open");
+  $("code").focus();
+};
+
+async function checkCode(c) {
+  const r = await fetch("/api/check", { method: "POST", headers: { "x-code": c } });
+  return r.ok;
+}
+
+$("knopCode").onclick = async () => {
+  const c = $("code").value.trim();
+  $("meldingCode").className = "melding";
+  $("meldingCode").textContent = "Even checken...";
+  if (await checkCode(c)) {
+    code = c;
+    try { sessionStorage.setItem("code", c); } catch (e) {}
+    $("code").value = "";
+    $("meldingCode").textContent = "";
+    zetBeheer(true);
+  } else {
+    $("meldingCode").className = "melding fout";
+    $("meldingCode").textContent = "Verkeerde code";
+  }
+};
+$("code").onkeydown = (e) => { if (e.key === "Enter") $("knopCode").click(); };
+
+$("knopUit").onclick = () => {
+  code = "";
+  try { sessionStorage.removeItem("code"); } catch (e) {}
+  zetBeheer(false);
+};
+
+// Maak foto kleiner zodat hij snel laadt (max 2000px)
+function verklein(file) {
+  return new Promise((resolve) => {
+    if (file.type === "image/gif") return resolve(file);
+    const img = new Image();
+    img.onload = () => {
+      const max = 2000;
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      c.toBlob((b) => resolve(b || file), "image/jpeg", 0.85);
+      URL.revokeObjectURL(img.src);
+    };
+    img.onerror = () => resolve(file);
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+$("knopUpload").onclick = async () => {
+  const files = [...$("bestanden").files];
+  const m = $("meldingUpload");
+  m.className = "melding";
+  if (!files.length) { m.textContent = "Kies eerst een foto"; return; }
+  $("knopUpload").disabled = true;
+  let gelukt = 0;
+  for (let i = 0; i < files.length; i++) {
+    m.textContent = `Uploaden ${i + 1} van ${files.length}...`;
+    const blob = await verklein(files[i]);
+    const fd = new FormData();
+    fd.append("foto", blob, files[i].name);
+    fd.append("titel", $("titel").value.trim());
+    const r = await fetch("/api/upload", { method: "POST", headers: { "x-code": code }, body: fd });
+    if (r.ok) gelukt++;
+    else if (r.status === 401) { m.className = "melding fout"; m.textContent = "Code klopt niet meer"; zetBeheer(false); break; }
+  }
+  $("knopUpload").disabled = false;
+  $("bestanden").value = ""; $("titel").value = "";
+  if (gelukt) m.textContent = `${gelukt} foto('s) toegevoegd`;
+  laad();
+};
+
+(async () => {
+  if (code && await checkCode(code)) zetBeheer(true); else code = "";
+  laad();
+})();
+</script>
+</body>
+</html>
